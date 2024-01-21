@@ -1,0 +1,53 @@
+---
+# this playbook is based on that instructions: https://www.linkedin.com/pulse/ansible-playbook-install-configure-nginx-daniel-puig-gerarde/
+- name: Run the first VM creation on vmware
+  hosts: localhost
+
+  tasks:
+    - name: set connection info
+      # set attributes for reused attribute or calculate something - here is for the lookup moid
+      ansible.builtin.set_fact:
+        connection_args:
+          vcenter_hostname: "{{ hostname }}"
+          vcenter_username: "{{ username }}"
+          vcenter_password: "{{ password }}"
+          vcenter_validate_certs: "false"
+
+    - name: Retrieve all the details about the new VM
+      vmware.vmware_rest.vcenter_vm_info:
+        vcenter_hostname: "{{ connection_args.vcenter_hostname }}"
+        vcenter_username: "{{ connection_args.vcenter_username }}"
+        vcenter_password: "{{ connection_args.vcenter_password }}"
+        vcenter_validate_certs: "false"
+        names:
+        - test_vm1
+      register: vms
+
+    - name: Remove VM if exists, by its ID
+      when: vms.value | length == 1
+      block:
+      - name: Create the VM
+        vmware.vmware_rest.vcenter_vm:
+          vcenter_hostname: "{{ connection_args.vcenter_hostname }}"
+          vcenter_username: "{{ connection_args.vcenter_username }}"
+          vcenter_password: "{{ connection_args.vcenter_password }}"
+          vcenter_validate_certs: "false"
+          placement:
+            # there is a lookup (like a module) called vmware.vmware_rest.cluster_moid
+            cluster: "{{ lookup('vmware.vmware_rest.cluster_moid', '/my_dc/host/my_cluster', **connection_args) }}"
+            datastore: "{{ lookup('vmware.vmware_rest.datastore_moid', '/my_dc/datastore/rw_datastore', **connection_args) }}"
+            folder: "{{ lookup('vmware.vmware_rest.folder_moid', '/my_dc/vm', **connection_args) }}"
+          name: test_vm1
+          guest_OS: RHEL_7_64
+          hardware_version: VMX_11
+          vm: "{{vms.value[0].vm}}"
+          state: absent
+          memory:
+            hot_add_enabled: true
+            size_MiB: 1024
+        # a local attribute
+        register: removed_vm_info
+
+      - name: Print Deletion information
+        ansible.builtin.debug:
+          var: removed_vm_info
